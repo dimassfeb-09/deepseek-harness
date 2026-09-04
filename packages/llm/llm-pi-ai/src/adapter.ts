@@ -372,7 +372,13 @@ export class PiAiAdapter extends LlmAdapter {
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
+        // Include harness session id so provider-agnostic gateways
+        // (e.g. opencode-free-gateway) can sticky per-window and
+        // achieve 98-100% prefix cache. Mirrors llm-deepseek header.
+        headers: requestHeaders({
+          ...(profile.headers ?? {}),
+          ...(options.sessionId === undefined ? {} : { 'x-deepseek-harness-session-id': String(options.sessionId) }),
+        }),
       })
       const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
       let exhausted = false
