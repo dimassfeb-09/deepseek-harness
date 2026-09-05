@@ -212,6 +212,21 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined): 
 }
 
 /**
+ * Stable per-conversation value for `x-opencode-session`. OpenCode Go pins
+ * requests sharing this header to one backend for prompt-cache affinity;
+ * without it `deepseek-v4-flash` and siblings were near 0% sticky versus
+ * `muse-spark-*` at 74-90% in their telemetry (discussion #5495). The raw
+ * `SessionId` is `session-<uuid>`; send the bare UUID when present.
+ */
+function opencodeSessionValue(raw: string): string {
+  const hyphenated = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0].toLowerCase()
+  if (hyphenated !== undefined) return hyphenated
+  const compact = raw.match(/[0-9a-f]{32}/i)?.[0].toLowerCase()
+  if (compact !== undefined) return `${compact.slice(0, 8)}-${compact.slice(8, 12)}-${compact.slice(12, 16)}-${compact.slice(16, 20)}-${compact.slice(20)}`
+  return raw
+}
+
+/**
  * pi-ai-backed multi-provider adapter. Each operation reads the current
  * profiles, so a configuration change reaches the next request without a
  * restart; model descriptors come from the collection those profiles built.
@@ -383,9 +398,14 @@ export class PiAiAdapter extends LlmAdapter {
         // Include harness session id so provider-agnostic gateways
         // (e.g. opencode-free-gateway) can sticky per-window and
         // achieve 98-100% prefix cache. Mirrors llm-deepseek header.
+        // `x-opencode-session` is the same id in bare-UUID form for
+        // OpenCode Go/Zen affinity (required from 09/06).
         headers: requestHeaders({
           ...(profile.headers ?? {}),
-          ...(options.sessionId === undefined ? {} : { 'x-deepseek-harness-session-id': String(options.sessionId) }),
+          ...(options.sessionId === undefined ? {} : {
+            'x-deepseek-harness-session-id': String(options.sessionId),
+            'x-opencode-session': opencodeSessionValue(String(options.sessionId)),
+          }),
         }),
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal)[Symbol.asyncIterator]()

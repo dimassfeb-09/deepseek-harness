@@ -38,6 +38,18 @@ import type {
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { ImageWireLocation, RequestDefaults } from './serialize.ts'
 import { deepSeekImageRequestPricing, resolveRequestImagePolicy } from './request-pricing.ts'
+
+/**
+ * Bare UUID for `x-opencode-session` (OpenCode Go/Zen backend affinity).
+ * Mirrors `dsh-llm-pi-ai` so both adapters emit the same stable value.
+ */
+function opencodeSessionValue(raw: string): string {
+  const hyphenated = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0].toLowerCase()
+  if (hyphenated !== undefined) return hyphenated
+  const compact = raw.match(/[0-9a-f]{32}/i)?.[0].toLowerCase()
+  if (compact !== undefined) return `${compact.slice(0, 8)}-${compact.slice(8, 12)}-${compact.slice(12, 16)}-${compact.slice(16, 20)}-${compact.slice(20)}`
+  return raw
+}
 import { DeepSeekFileStore } from './file-store.ts'
 import type { DeepSeekFilePolicy } from './file-store.ts'
 import type { DeepSeekFileId } from './file-id.ts'
@@ -535,7 +547,10 @@ export class DeepSeekAdapter extends LlmAdapter {
       ...attributionHeaders(),
       'x-deepseek-harness-user-id': String(userId),
       ...options.sessionId !== undefined
-        ? { 'x-deepseek-harness-session-id': String(options.sessionId) }
+        ? {
+          'x-deepseek-harness-session-id': String(options.sessionId),
+          'x-opencode-session': opencodeSessionValue(String(options.sessionId)),
+        }
         : {},
       ...options.purpose === 'compaction'
         ? { 'x-deepseek-harness-compact': '1' }
